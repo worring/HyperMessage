@@ -5,7 +5,7 @@ import pickle
 import ipdb
 from random import shuffle
 
-def load(split,data,set):
+def load(data,set):
     """
     parses the dataset
     """
@@ -13,19 +13,46 @@ def load(split,data,set):
 
     current = os.path.abspath(inspect.getfile(inspect.currentframe()))
     Dir, _ = os.path.split(current)
-    file = os.path.join(Dir, data, set, "splits", str(split) + ".pickle")
+    file = os.path.join(Dir, data, set, ".pickle")
+    print("OPEN FILE: ", file)
 
-    if not os.path.isfile(file): print("split + ", str(split), "does not exist")
+    if not os.path.isfile(file): print(str(file)+"does not exist")
     with open(file, 'rb') as H: 
         Splits = pickle.load(H)
         train, test = Splits['train'], Splits['test']
     return dataset, train, test
 
+def load_split(split,inputdir,data,set,generatesplit=False,doshuffle=False):
+    if generatesplit:
+        print("GENERATE SPLIT:", split, data, set)
+    else:
+        print("LOAD SPLIT:", split, data, set)
+    print("DOSHUFFLE: ", doshuffle)
+    """
+    parses the dataset
+    """
+    dataset = parser(data, set).parse()
 
-def load_multimedia(data,set,doshuffle=False):
-    current = os.path.abspath(inspect.getfile(inspect.currentframe()))
-    Dir, _ = os.path.split(current)
-    file = os.path.join(Dir, set + ".pickle")
+    if generatesplit:
+        all_nodes = list(range(dataset['n']))
+        if doshuffle:
+            shuffle(all_nodes)
+        train = all_nodes[:int(0.7*len(all_nodes))]
+        test = all_nodes[int(0.3*len(all_nodes)):]
+    else:
+        file = inputdir+'/'+data+'/'+set+'/'+"splits"+'/'+str(split)+".pickle"
+        print(file)
+        if not os.path.isfile(file): 
+            print("split + ", str(split), "does not exist")
+        with open(file, 'rb') as H: 
+            Splits = pickle.load(H)
+        train, test = Splits['train'], Splits['test']
+        
+    return dataset, train, test
+
+
+def load_multimedia(inputdir,data,set,doshuffle=False):
+    file = inputdir + '/' + set + '.pickle'
     dataset = pickle.load(open(file, "rb"))
     X, Y = dataset['XAll'], dataset['LAll']
     all_nodes = list(range(X.shape[0]))

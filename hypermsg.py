@@ -99,7 +99,7 @@ def train_classification_model(model,optimiser,E,F,X,Y,input_weight,idx_train,ep
         print('Epoch: {:04d}'.format(epoch+1),'loss_train: {:.4f}'.format(loss_train.item()),'acc_train: {:.4f}'.format(acc_train.item()),
        'time: {:.4f}s'.format(time.time() - t))
 
-def get_multimedia_data(dataset):
+def get_multimedia_data(dataset, addself=False):
     E  = {}
 
     index = 0
@@ -115,12 +115,13 @@ def get_multimedia_data(dataset):
 
     for k, v in E.items():
        E[k] = list(v)
-    #    if k not in E[k]:
-    #       E[k].append(k)
+       if addself:
+           if k not in E[k]:
+               E[k].append(k)
     return E, X, Y
 
-def process_multimedia_dataset(dataset,cuda):
-    E, X, Y = get_multimedia_data(dataset)
+def process_multimedia_dataset(dataset,addself,cuda):
+    E, X, Y = get_multimedia_data(dataset, addself)
     return prepare_graph_data(E,X,Y,True)
 
 def train_hypermsg_multimedia_model(E,X,Y,input_weight,idx_train,idx_test,d,c,depth,epochs,dropout,rate,decay,cuda):
@@ -148,19 +149,20 @@ def train_hypermsg_multimedia_model(E,X,Y,input_weight,idx_train,idx_test,d,c,de
     return hypermsg, fin_loss
 
 
-def get_data(dataset):
+def get_data(dataset, addself=False):
     E =  dataset['hypergraph']
     X, Y = dataset['features'], dataset['labels']
    
     for k, v in E.items():
         E[k] = list(v)
-        if k not in E[k]:
-            E[k].append(k)
+        if addself:
+            if k not in E[k]:
+                E[k].append(k)
     return E, X, Y
 
 
-def process_dataset(dataset,cuda):
-    E, X, Y = get_data(dataset)
+def process_dataset(dataset,addself,cuda):
+    E, X, Y = get_data(dataset,addself)
     return prepare_graph_data(E,X,Y)
 
 def prepare_graph_data(E,X,Y, multimedia = False):
@@ -215,8 +217,8 @@ def train_hypermsg_model(E,X,Y,input_weight,idx_train,idx_test,d,c,depth,epochs,
             loss_test,acc_test = test_classification_model(hypermsg,E,X,Y,input_weight,idx_test)
     return hypermsg, acc_test
 
-def get_split(split,input,dset, cuda):
-    dataset, train, test = data.load(split,input,dset)
+def get_split(split,dir,input,dset, cuda, generatesplit, doshuffle):
+    dataset, train, test = data.load_split(split,dir,input,dset,generatesplit,doshuffle)
     idx_train = torch.LongTensor(train)
     idx_test = torch.LongTensor(test)
     if cuda:
@@ -225,8 +227,8 @@ def get_split(split,input,dset, cuda):
     return dataset, idx_train, idx_test
 
             
-def get_multimedia_split(split,input,dset, cuda, doshuffle):
-    dataset, train, test = data.load_multimedia(input,dset,doshuffle)
+def get_multimedia_split(split,dir,input,dset, cuda, doshuffle):
+    dataset, train, test = data.load_multimedia(dir,input,dset,doshuffle)
     idx_train = torch.LongTensor(train)
     idx_test = torch.LongTensor(test)
     if cuda:
@@ -234,29 +236,29 @@ def get_multimedia_split(split,input,dset, cuda, doshuffle):
         idx_test = idx_test.cuda()
     return dataset, idx_train, idx_test
     
-def eval_multimedia_splits(input,dset,splits,depth,epochs,dropout,rate,decay,cuda,doshuffle):
+def eval_multimedia_splits(input,dir,dset,addself,splits,depth,epochs,dropout,rate,decay,cuda,doshuffle):
     test_result_each_split = []
     for num in range(splits):
         print("SPLIT: ", num )
         print('\n')
 	
-        dataset, idx_train, idx_test = get_multimedia_split(num+1,input,dset,cuda,doshuffle)
-        E, X, Y, d, c, input_weight = process_multimedia_dataset(dataset, cuda)
+        dataset, idx_train, idx_test = get_multimedia_split(num+1,dir,input,dset,cuda,doshuffle)
+        E, X, Y, d, c, input_weight = process_multimedia_dataset(dataset, addself, cuda)
         hypermsg,acc_test = train_hypermsg_multimedia_model(E,X,Y,input_weight,idx_train,idx_test,d,c,depth,epochs,dropout,rate,decay,cuda)
 
         fin_loss = test_regression_model(hypermsg,E,X,Y,input_weight,idx_test)
         test_result_each_split.append(fin_loss)
     return test_result_each_split
 
-
-def eval_splits(input,dset,splits,depth,epochs,dropout,rate,decay,cuda):
+def eval_splits(input,dir,dset,addself,splits,generatesplit,depth,epochs,dropout,rate,decay,cuda,doshuffle):
     test_result_each_split = []
     for num in range(splits):
         print("SPLIT: ", num )
         print('\n')
 
-        dataset, idx_train, idx_test = get_split(num+1,input,dset,cuda)
-        E, X, Y, d, c, input_weight = process_dataset(dataset, cuda)
+        dataset, idx_train, idx_test = get_split(num+1,dir,input,dset,cuda,generatesplit,doshuffle)
+
+        E, X, Y, d, c, input_weight = process_dataset(dataset, addself, cuda)
 
         hypermsg,acc_test = train_hypermsg_model(E,X,Y,input_weight,idx_train,idx_test,d,c,depth,epochs,dropout,rate,decay,cuda)
 
@@ -283,14 +285,17 @@ args = config.parse()
 initialize_settings(args.seed,args.gpu)
 nsplits = args.split
 cuda = args.cuda and torch.cuda.is_available()
+print("ARGS ", args)
 doshuffle = args.shuffle
+print("DOSHUFFLE ", doshuffle)
 dataset = args.dataset
 res = []
+print(args)
 if dataset == "MIRFLICKR":
-    res = eval_multimedia_splits(args.data,args.dataset,nsplits,args.depth,args.epochs,args.dropout,args.rate,args.decay,cuda,doshuffle)
-if dataset in ["cora","citeseer","pubmed"]:
-    res = eval_splits(args.data,args.dataset,nsplits,args.depth,args.epochs,args.dropout,args.rate,args.decay,cuda)
+    res = eval_multimedia_splits(args.data,args.inputdir,args.dataset,args.addself,nsplits,args.depth,args.epochs,args.dropout,args.rate,args.decay,cuda,doshuffle)
+if dataset in ["dblp","cora","citeseer","pubmed"]:
+    res = eval_splits(args.data,args.inputdir,args.dataset,args.addself,nsplits,args.generatesplit,args.depth,args.epochs,args.dropout,args.rate,args.decay,cuda,doshuffle)
 if res != []:
     print("mean: ", statistics.mean(res))
     print("sdev: ", statistics.stdev(res))
-    store_result(res,"hyperout.txt")
+    store_result(res,args.out+'.txt')
